@@ -16,7 +16,7 @@ VSCode Setting
 
 ## Usage
 ```
-$ cargo run tests/add_zero.rs
+$ cargo run tests/identical_bin_op.rs
 ```
 
 ## Screenshots

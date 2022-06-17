@@ -52,7 +52,7 @@ impl rustc_driver::Callbacks for MinippyCallBacks {
     fn config(&mut self, config: &mut rustc_interface::Config) {
         config.register_lints = Some(Box::new(move |_sess, lint_store| {
             // lintを登録する
-            lint_store.register_late_pass(|| Box::new(AddZero));
+            lint_store.register_late_pass(|| Box::new(IdenticalBinOp));
         }));
     }
 
@@ -69,28 +69,28 @@ impl rustc_driver::Callbacks for MinippyCallBacks {
 
 // おまじない
 declare_tool_lint! {
-    pub crate::ADD_ZERO,
+    pub crate::IDENTICAL_BIN_OP,
     Warn, // lintのレベル
     "", // lintの説明(今回は省略)
     report_in_external_macro: true
 }
 
-struct AddZero;
+struct IdenticalBinOp;
 // おまじない
-impl_lint_pass!(AddZero => [ADD_ZERO]);
+impl_lint_pass!(IdenticalBinOp => [IDENTICAL_BIN_OP]);
 
 // 式がリテラルの0かチェックする
-fn is_lit_zero(expr: &Expr) -> bool {
+fn is_lit_num(expr: &Expr, num: u128) -> bool {
     if let ExprKind::Lit(lit) = &expr.kind
-        && let LitKind::Int(0, ..) = lit.node
+        && let LitKind::Int(lit_num, ..) = lit.node
     {
-        true
+        lit_num == num
     } else {
         false
     }
 }
 
-impl<'tcx> LateLintPass<'tcx> for AddZero {
+impl<'tcx> LateLintPass<'tcx> for IdenticalBinOp {
     fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'tcx>) {
         // マクロ展開されたコードはリントしない
         if expr.span.from_expansion() {
@@ -99,11 +99,31 @@ impl<'tcx> LateLintPass<'tcx> for AddZero {
         // 二項演算かつ、左辺もしくは右辺がリテラルの0であるならば、
         if let ExprKind::Binary(binop, lhs, rhs) = expr.kind
             && BinOpKind::Add == binop.node
-            && (is_lit_zero(lhs) || is_lit_zero(rhs))
+            && (is_lit_num(lhs, 0) || is_lit_num(rhs, 0))
         {
             // 警告を表示する
-            cx.struct_span_lint(ADD_ZERO, expr.span, |diag| {
-                let mut diag = diag.build("Ineffective operation");
+            cx.struct_span_lint(IDENTICAL_BIN_OP, expr.span, |diag| {
+                let mut diag = diag.build("_ + 0 nor _ + 0");
+                diag.emit();
+            });
+        }
+        if let ExprKind::Binary(binop, _lhs, rhs) = expr.kind
+            && BinOpKind::Sub == binop.node
+            && is_lit_num(rhs, 0)
+        {
+            // 警告を表示する
+            cx.struct_span_lint(IDENTICAL_BIN_OP, expr.span, |diag| {
+                let mut diag = diag.build("_ - 0");
+                diag.emit();
+            });
+        }
+        if let ExprKind::Binary(binop, lhs, rhs) = expr.kind
+            && BinOpKind::Mul == binop.node
+            && (is_lit_num(lhs, 1) || is_lit_num(rhs, 1))
+        {
+            // 警告を表示する
+            cx.struct_span_lint(IDENTICAL_BIN_OP, expr.span, |diag| {
+                let mut diag = diag.build("_ * 1 nor _ * 1");
                 diag.emit();
             });
         }
